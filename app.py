@@ -9,10 +9,37 @@ import zipfile
 # Streamlit App Setup
 # ---------------------------
 
+# Add these at the top of your file with other imports
+PRICE_TIERS = [
+    5.99, 7.99, 9.99, 12.95, 15.50, 19.99, 21.50, 24.50, 28.50, 29.99,
+    31.50, 34.50, 39.99, 45.00, 48.50, 59.99, 68.95, 79.99, 96.50, 99.90,
+    108.50, 118.50, 124.50, 135.00, 148.50, 179.99, 225.00, 275.00, 299.00
+]
+
+def calculate_simons_price(cost):
+    """
+    Calculate Simon's Price based on cost and predefined price tiers.
+    """
+    if cost <= 0:
+        return 0, 0
+        
+    # Calculate 40% markup
+    estimated_price = cost / 0.60
+    
+    # Find the closest price tier
+    closest_tier = min(PRICE_TIERS, key=lambda x: abs(x - estimated_price))
+    
+    return estimated_price, closest_tier
+
 st.title("Product Contract Processor")
 
 # Create tabs for the two steps
-tab1, tab2 = st.tabs(["Step 1: Generate Combined File", "Step 2: Generate Contract Files"])
+# Update your tabs creation to include the third tab
+tab1, tab2, tab3 = st.tabs([
+    "Step 1: Generate Combined File", 
+    "Step 2: Generate Contract Files",
+    "Simon's Price Calculator"
+])
 
 # ---------------------------
 # STEP 1
@@ -295,3 +322,39 @@ with tab2:
                     raise e
         except Exception as e:
             st.error(f"Error reading the combined file: {str(e)}")
+
+
+# ---------------------------
+# STEP 3: Simon's Price Calculator
+# ---------------------------
+with tab3:
+    st.header("Simon's Price Calculator")
+
+
+    
+    # Input for cost
+    cost = st.number_input("Enter Item Cost ($)", min_value=0.0, value=0.0, step=0.01)
+    
+    # Calculate button
+    if st.button("Calculate Price", key="calculate_price"):
+        if cost > 0:
+            estimated_price, final_price = calculate_simons_price(cost)
+            
+            # Create results columns
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Cost", f"${cost:.2f}")
+            
+            with col2:
+                st.metric("Estimated Price (40% Markup)", f"${estimated_price:.2f}")
+            
+            with col3:
+                st.metric("Final Price (Nearest Tier)", f"${final_price:.2f}")
+            
+            # Calculate and display margin
+            if final_price > 0:
+                actual_margin = ((final_price - cost) / final_price) * 100
+                st.write(f"Actual Margin: {actual_margin:.1f}%")
+        else:
+            st.warning("Please enter a cost greater than $0.")
