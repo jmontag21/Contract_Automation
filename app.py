@@ -87,6 +87,9 @@ tab1, tab2, tab3 = st.tabs([
     "Simon's Price Calculator"
 ])
 
+# ---------------------------
+# STEP 1
+# ---------------------------
 with tab1:
     st.header("Step 1: Generate Combined Prices and Counts")
     st.write("""
@@ -101,7 +104,6 @@ with tab1:
     - LIB-HOTEL.csv
     - CUSTOMER TYPE LIST.csv
     - ORDER_DETAIL.csv
-    - ProductList.csv
     """)
 
     # File uploader for Step 1
@@ -125,7 +127,7 @@ with tab1:
         required_files = [
             'HOTEL.csv', 'GYM.csv', 'BUSINESS.csv', 'BUILDING.csv',
             'RETRO.csv', 'CRUNCH.csv', 'LIB-HOTEL.csv',
-            'CUSTOMER TYPE LIST.csv', 'ORDER_DETAIL.csv', 'ProductList.csv'
+            'CUSTOMER TYPE LIST.csv', 'ORDER_DETAIL.csv'
         ]
 
         missing_files = [file for file in required_files if file not in uploaded_data]
@@ -134,13 +136,9 @@ with tab1:
             st.error(f"Missing files: {', '.join(missing_files)}")
         else:
             try:
-                # Load ProductList first to get discontinued items
-                product_list_df = uploaded_data['ProductList.csv']
-                discontinued_products = product_list_df[
-                    product_list_df['ProductCostDiscontinued'] == True
-                ]['ProductID'].astype(str).tolist()
-                
-                # Load all other files
+                # ---------------------------
+                # Load Data from Uploaded Files
+                # ---------------------------
                 hotel_df = uploaded_data['HOTEL.csv']
                 gym_df = uploaded_data['GYM.csv']
                 business_df = uploaded_data['BUSINESS.csv']
@@ -151,34 +149,14 @@ with tab1:
                 customer_type_df = uploaded_data['CUSTOMER TYPE LIST.csv']
                 order_detail_df = uploaded_data['ORDER_DETAIL.csv']
 
-                # Remove discontinued items based on ProductList
-                contract_dfs = {
-                    'HOTEL': hotel_df,
-                    'GYM': gym_df,
-                    'BUSINESS': business_df,
-                    'BUILDING': building_df,
-                    'RETRO': retro_df,
-                    'CRUNCH': crunch_df,
-                    'LIBRARY': library_df
-                }
-
-                # Filter out discontinued products from all contract DataFrames
-                for name, df in contract_dfs.items():
-                    df['ProductID'] = df['ProductID'].astype(str)
-                    contract_dfs[name] = df[~df['ProductID'].isin(discontinued_products)]
-
-                # Reassign filtered DataFrames
-                hotel_df = contract_dfs['HOTEL']
-                gym_df = contract_dfs['GYM']
-                business_df = contract_dfs['BUSINESS']
-                building_df = contract_dfs['BUILDING']
-                retro_df = contract_dfs['RETRO']
-                crunch_df = contract_dfs['CRUNCH']
-                library_df = contract_dfs['LIBRARY']
-
-                # Filter order_detail_df
-                order_detail_df['ProductID'] = order_detail_df['ProductID'].astype(str)
-                order_detail_df = order_detail_df[~order_detail_df['ProductID'].isin(discontinued_products)]
+                # Remove discontinued items
+                hotel_df = hotel_df[hotel_df['Discontinued'].fillna('N') != 'Y']
+                gym_df = gym_df[gym_df['Discontinued'].fillna('N') != 'Y']
+                business_df = business_df[business_df['Discontinued'].fillna('N') != 'Y']
+                building_df = building_df[building_df['Discontinued'].fillna('N') != 'Y']
+                retro_df = retro_df[retro_df['Discontinued'].fillna('N') != 'Y']
+                crunch_df = crunch_df[crunch_df['Discontinued'].fillna('N') != 'Y']
+                library_df = library_df[library_df['Discontinued'].fillna('N') != 'Y']
 
                 # Get list of active ProductIDs
                 active_products = set()
@@ -217,16 +195,18 @@ with tab1:
                 order_detail_df['Customer-CustomerType'] = order_detail_df['Customer-CustomerType'].str.upper().str.strip()
                 order_detail_df = order_detail_df[order_detail_df['IsSpecialItem'] == 'N']
 
+                # ---------------------------
                 # Create Combined DataFrame
+                # ---------------------------
+                # Start with highest cost for each ProductID across all contracts
+                all_costs = pd.DataFrame()
                 contracts = {
                     'GYM': gym_df,
                     'HOTEL': hotel_df,
                     'BUILDING': building_df,
                     'BUSINESS': business_df
                 }
-
-                # Get highest cost for each ProductID
-                all_costs = pd.DataFrame()
+                
                 for df in contracts.values():
                     costs = df[['ProductID', 'Cost']].copy()
                     if all_costs.empty:
@@ -235,18 +215,23 @@ with tab1:
                         all_costs = pd.concat([all_costs, costs])
                 
                 max_costs = all_costs.groupby('ProductID')['Cost'].max().reset_index()
+                
+                # Initialize combined_df with ProductID and COST
                 combined_df = max_costs.copy()
                 combined_df.columns = ['ProductID', 'COST']
 
-                # Get detailed purchase information
+                # Get detailed purchase information for each product
                 purchase_details = []
                 for product_id in combined_df['ProductID'].unique():
                     product_orders = order_detail_df[order_detail_df['ProductID'] == product_id]
+                    
+                    # Get unique customers and their total purchases
                     customer_purchases = product_orders.groupby('CustomerID').agg({
                         'CustomerName': 'first',
                         'Quantity': 'sum'
                     }).reset_index()
                     
+                    # Only include customer name if exactly one customer with exactly one purchase
                     if len(customer_purchases) == 1 and customer_purchases['Quantity'].iloc[0] == 1:
                         unique_customer = customer_purchases['CustomerName'].iloc[0]
                     else:
@@ -257,17 +242,18 @@ with tab1:
                         'UNIQUE_CUSTOMER': unique_customer
                     })
                 
+                # Convert to DataFrame and merge with combined_df
                 purchase_df = pd.DataFrame(purchase_details)
                 combined_df = combined_df.merge(purchase_df, on='ProductID', how='left')
 
-                # Add price columns
+                # Add price columns for each contract type
                 for contract_name, df in contracts.items():
                     price_col = f"{contract_name}Price"
                     contract_prices = df[['ProductID', 'ContractPrice']].copy()
                     contract_prices.columns = ['ProductID', price_col]
                     combined_df = combined_df.merge(contract_prices, on='ProductID', how='left')
 
-                # Add count columns
+                # Add count columns for each contract type
                 for contract_name in contracts.keys():
                     count_col = f"{contract_name}Count"
                     contract_counts = order_detail_df[
@@ -275,6 +261,7 @@ with tab1:
                     ].groupby('ProductID')['Quantity'].sum().reset_index(name=count_col)
                     combined_df = combined_df.merge(contract_counts, on='ProductID', how='left')
 
+                # Fill NaN values with 0
                 combined_df = combined_df.fillna(0)
 
                 # Add REVIEW column
@@ -286,7 +273,7 @@ with tab1:
                     non_zero_prices = [p for p in prices if p > 0]
                     if non_zero_prices:
                         lowest_price = min(non_zero_prices)
-                        if row['COST'] > 0:
+                        if row['COST'] > 0:  # Using single COST column
                             margin = (lowest_price - row['COST']) / lowest_price * 100
                             if margin < 10:
                                 return "LOW MARGIN"
@@ -294,7 +281,7 @@ with tab1:
 
                 combined_df['REVIEW'] = combined_df.apply(get_review, axis=1)
 
-                # Reorder columns
+                # Reorder columns to match screenshot
                 column_order = [
                     'ProductID', 'UNIQUE_CUSTOMER', 'COST',
                     'GYMPrice', 'HOTELPrice', 'BUILDINGPrice', 'BUSINESSPrice',
@@ -328,15 +315,19 @@ with tab2:
     st.header("Step 2: Generate Contract Files")
     st.write("Upload the COMBINED_PRICES_COUNTS file to generate individual contract files.")
 
+    # File uploader for Step 2
     combined_file = st.file_uploader("Upload COMBINED_PRICES_COUNTS.csv", type="csv", key="step2_file")
 
     if combined_file is not None:
         try:
+            # Read the combined file
             combined_df = pd.read_csv(combined_file)
             st.success("File uploaded successfully!")
 
+            # Button to generate contract files
             if st.button("Generate Contract Files", key="step2_button"):
                 try:
+                    # Define contract templates to generate
                     contracts = {
                         'BUILDINGS': ['ProductID', 'BUILDINGPrice'],
                         'BUSINESS': ['ProductID', 'BUSINESSPrice'],
@@ -347,17 +338,24 @@ with tab2:
                         'RETRO FITNESS': ['ProductID', 'GYMPrice']
                     }
 
+                    # Create a ZIP file containing all contract files
                     zip_buffer = BytesIO()
                     with zipfile.ZipFile(zip_buffer, "w") as zf:
                         for contract_name, columns in contracts.items():
+                            # Create contract specific DataFrame
                             contract_df = combined_df[columns].copy()
+                            # Rename price column to standard name
                             contract_df.columns = ['ProductID', 'ContractPrice']
+                            # Remove rows where ContractPrice is 0
                             contract_df = contract_df[contract_df['ContractPrice'] > 0]
+                            # Save to CSV string
                             csv_data = contract_df.to_csv(index=False)
+                            # Add to ZIP
                             zf.writestr(f"{contract_name.replace(' ', '_')}.csv", csv_data)
 
                     st.success("Contract files generated successfully!")
 
+                    # Download button for the ZIP file
                     st.download_button(
                         label="Download All Contract Files",
                         data=zip_buffer.getvalue(),
@@ -370,6 +368,7 @@ with tab2:
                     raise e
         except Exception as e:
             st.error(f"Error reading the combined file: {str(e)}")
+
 
 # ---------------------------
 # STEP 3: Simon's Price Calculator
