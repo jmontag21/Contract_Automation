@@ -77,7 +77,7 @@ def calculate_simons_price(cost):
     
     return estimated_price, closest_tier
 
-st.title("Product Contract Processor")
+st.title("Product Contract Processor V2")
 
 # Create tabs for the two steps
 # Update your tabs creation to include the third tab
